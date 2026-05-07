@@ -257,12 +257,13 @@ function drawGrid() {
       if (dLen > MAX_WARP) { dx = dx/dLen*MAX_WARP; dy = dy/dLen*MAX_WARP; }
 
       const p = toScreen(gwx + dx, gwy + dy);
+      p.distorted = (dLen > 2.5); // Flag points that are moved by more than 2.5 units
       pts[r][co] = p;
     }
   }
 
-  ctx.strokeStyle = 'rgba(168, 85, 247, 0.25)';
-  ctx.lineWidth = 1.0;
+  ctx.strokeStyle = 'rgba(168, 85, 247, 0.08)';
+  ctx.lineWidth = 0.8;
   ctx.beginPath();
 
   for (let r = 0; r <= rows; r++) {
@@ -272,6 +273,25 @@ function drawGrid() {
   for (let co = 0; co <= cols; co++) {
     ctx.moveTo(pts[0][co].x, pts[0][co].y);
     for (let r = 1; r <= rows; r++) ctx.lineTo(pts[r][co].x, pts[r][co].y);
+  }
+  ctx.stroke();
+
+  // Second pass: Draw "active" lines (the connections/dips) in a different color
+  ctx.strokeStyle = 'rgba(120, 180, 255, 0.15)';
+  ctx.lineWidth = 1.0;
+  ctx.beginPath();
+  for (let r = 0; r < rows; r++) {
+    for (let co = 0; co < cols; co++) {
+      const p1 = pts[r][co];
+      const p2 = pts[r][co+1];
+      const p3 = pts[r+1][co];
+      
+      // If the point is significantly warped, highlight it
+      if (p1.distorted) {
+        if (p2) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); }
+        if (p3) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p3.x, p3.y); }
+      }
+    }
   }
   ctx.stroke();
 }
