@@ -26,12 +26,25 @@
 
     #hint {
       position: absolute;
-      bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+      bottom: calc(48px + env(safe-area-inset-bottom, 0px));
       left: 50%; transform: translateX(-50%);
-      font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
-      color: rgba(168, 85, 247, 0.35);
+      font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+      color: #fff;
+      background: rgba(124, 58, 237, 0.8);
+      padding: 12px 24px;
+      border-radius: 100px;
       white-space: nowrap;
-      transition: opacity 1s;
+      transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px);
+    }
+    .pulse {
+      animation: pulse-ring 2s infinite;
+    }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.7); }
+      70% { box-shadow: 0 0 0 15px rgba(124, 58, 237, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
     }
 
     #clear-btn {
@@ -332,19 +345,40 @@ function frame() {
 const ring  = document.getElementById('charge-ring');
 const line  = document.getElementById('velocity-line');
 const hint  = document.getElementById('hint');
+const clearBtn = document.getElementById('clear-btn');
+
 let charging    = false;
 let chargeStart = 0;
 let startWX = 0, startWY = 0;    // world coords for body placement
 let startSX = 0, startSY = 0;    // screen coords for body placement
 let currentSX = 0, currentSY = 0; // current screen coords for velocity
-let hintTimer = null;
 
-function fadeHint() {
-  clearTimeout(hintTimer);
-  hint.style.opacity = '1';
-  hintTimer = setTimeout(() => hint.style.opacity = '0', 3000);
+// Tutorial State
+let tutorialStep = 0;
+const steps = [
+  "Tap & hold to create a star",
+  "Now drag away to set velocity",
+  "Release to launch!",
+  "Tap 'Reset' to clear the board"
+];
+
+function updateTutorial() {
+  if (tutorialStep < steps.length) {
+    hint.textContent = steps[tutorialStep];
+    hint.style.opacity = '1';
+    hint.classList.add('pulse');
+    
+    if (tutorialStep === 3) {
+      clearBtn.classList.add('pulse');
+    } else {
+      clearBtn.classList.remove('pulse');
+    }
+  } else {
+    hint.style.opacity = '0';
+    clearBtn.classList.remove('pulse');
+  }
 }
-fadeHint();
+updateTutorial();
 
 function startCharge(sx, sy) {
   charging    = true;
@@ -361,12 +395,22 @@ function startCharge(sx, sy) {
   line.style.display = 'block';
   line.style.left = sx + 'px';
   line.style.top  = sy + 'px';
+
+  if (tutorialStep === 0) {
+    tutorialStep = 1;
+    updateTutorial();
+  }
 }
 
 function moveCharge(sx, sy) {
   if (!charging) return;
   currentSX = sx;
   currentSY = sy;
+
+  if (tutorialStep === 1 && (Math.abs(sx - startSX) > 20 || Math.abs(sy - startSY) > 20)) {
+    tutorialStep = 2;
+    updateTutorial();
+  }
 }
 
 function releaseCharge() {
@@ -378,19 +422,28 @@ function releaseCharge() {
   const held = Math.min(performance.now() - chargeStart, MAX_CHARGE);
   const mass = MASS_MIN + (held / MAX_CHARGE) * (MASS_MAX - MASS_MIN);
 
-  // Velocity is proportional to the drag distance on screen
-  // Dragging "away" now launches in that same direction
   const dx = (currentSX - startSX);
   const dy = (currentSY - startSY);
-  
-  // Convert screen drag to world velocity
-  // Dialed back velocity by 10x (0.08 -> 0.008)
   const spawnProj = toScreen(startWX, startWY);
   const vScale = 0.008 / spawnProj.s; 
   
   bodies.push(new Body(startWX, startWY, mass, dx * vScale, dy * vScale / Y_SQUISH));
-  fadeHint();
+
+  if (tutorialStep === 2) {
+    tutorialStep = 3;
+    updateTutorial();
+  }
 }
+
+// Intercept reset to progress tutorial
+const originalReset = resetSim;
+window.resetSim = () => {
+  originalReset();
+  if (tutorialStep === 3) {
+    tutorialStep = 4;
+    updateTutorial();
+  }
+};
 
 function drawChargePreview() {
   if (!charging) return;
