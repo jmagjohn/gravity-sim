@@ -355,14 +355,14 @@ function releaseCharge() {
   const mass = MASS_MIN + (held / MAX_CHARGE) * (MASS_MAX - MASS_MIN);
 
   // Velocity is proportional to the drag distance on screen
-  // But converted to world space scale roughly
-  const dx = (startSX - currentSX);
-  const dy = (startSY - currentSY);
+  // Dragging "away" now launches in that same direction
+  const dx = (currentSX - startSX);
+  const dy = (currentSY - startSY);
   
   // Convert screen drag to world velocity
-  // We use the reverse of the perspective scale at the spawn point
+  // Dialed back velocity by 10x (0.08 -> 0.008)
   const spawnProj = toScreen(startWX, startWY);
-  const vScale = 0.08 / spawnProj.s; 
+  const vScale = 0.008 / spawnProj.s; 
   
   bodies.push(new Body(startWX, startWY, mass, dx * vScale, dy * vScale / Y_SQUISH));
   fadeHint();
