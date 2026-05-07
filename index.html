@@ -63,14 +63,22 @@
       display: none;
       box-shadow: 0 0 12px rgba(168,85,247,0.4);
     }
+    #velocity-line {
+      position: absolute; pointer-events: none;
+      height: 2px;
+      background: rgba(168, 85, 247, 0.6);
+      transform-origin: left center;
+      display: none;
+    }
   </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="ui">
   <button id="clear-btn" onclick="resetSim()">reset</button>
-  <div id="hint">hold to add mass · release to drop</div>
+  <div id="hint">hold and drag to launch mass</div>
   <div id="charge-ring"></div>
+  <div id="velocity-line"></div>
 </div>
 
 <script>
@@ -298,11 +306,13 @@ function frame() {
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 const ring  = document.getElementById('charge-ring');
+const line  = document.getElementById('velocity-line');
 const hint  = document.getElementById('hint');
 let charging    = false;
 let chargeStart = 0;
-let chargeWX = 0, chargeWY = 0;  // world coords for body placement
-let chargeSX = 0, chargeSY = 0;  // screen coords for ring UI
+let startWX = 0, startWY = 0;    // world coords for body placement
+let startSX = 0, startSY = 0;    // screen coords for body placement
+let currentSX = 0, currentSY = 0; // current screen coords for velocity
 let hintTimer = null;
 
 function fadeHint() {
@@ -313,37 +323,48 @@ function fadeHint() {
 fadeHint();
 
 function startCharge(sx, sy) {
-  console.log('Attempting to start charge at screen:', sx, sy);
   charging    = true;
   chargeStart = performance.now();
   const w = fromScreen(sx, sy);
-  chargeWX = w.x; chargeWY = w.y;
-  chargeSX = sx;  chargeSY = sy;
+  startWX = w.x; startWY = w.y;
+  startSX = sx;  startSY = sy;
+  currentSX = sx; currentSY = sy;
+  
   ring.style.display = 'block';
   ring.style.left = sx + 'px';
   ring.style.top  = sy + 'px';
+  
+  line.style.display = 'block';
+  line.style.left = sx + 'px';
+  line.style.top  = sy + 'px';
 }
 
 function moveCharge(sx, sy) {
   if (!charging) return;
-  const w = fromScreen(sx, sy);
-  chargeWX = w.x; chargeWY = w.y;
-  chargeSX = sx;  chargeSY = sy;
-  ring.style.left = sx + 'px';
-  ring.style.top  = sy + 'px';
+  currentSX = sx;
+  currentSY = sy;
 }
 
 function releaseCharge() {
   if (!charging) return;
-  console.log('Releasing charge. Current body count:', bodies.length);
   charging = false;
   ring.style.display = 'none';
+  line.style.display = 'none';
 
   const held = Math.min(performance.now() - chargeStart, MAX_CHARGE);
   const mass = MASS_MIN + (held / MAX_CHARGE) * (MASS_MAX - MASS_MIN);
 
-  bodies.push(new Body(chargeWX, chargeWY, mass));
-  console.log('Added body. New count:', bodies.length);
+  // Velocity is proportional to the drag distance on screen
+  // But converted to world space scale roughly
+  const dx = (startSX - currentSX);
+  const dy = (startSY - currentSY);
+  
+  // Convert screen drag to world velocity
+  // We use the reverse of the perspective scale at the spawn point
+  const spawnProj = toScreen(startWX, startWY);
+  const vScale = 0.08 / spawnProj.s; 
+  
+  bodies.push(new Body(startWX, startWY, mass, dx * vScale, dy * vScale / Y_SQUISH));
   fadeHint();
 }
 
@@ -360,6 +381,16 @@ function drawChargePreview() {
   ring.style.height      = sz + 'px';
   ring.style.borderColor = `rgba(${r},${g},${b},0.7)`;
   ring.style.boxShadow   = `0 0 ${8 + frac * 20}px rgba(${r},${g},${b},0.4)`;
+  
+  // Update velocity line
+  const dx = currentSX - startSX;
+  const dy = currentSY - startSY;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const angle = Math.atan2(dy, dx);
+  
+  line.style.width = dist + 'px';
+  line.style.transform = `rotate(${angle}rad)`;
+  line.style.background = `rgba(${r},${g},${b},0.6)`;
 }
 
 // Unified pointer input
