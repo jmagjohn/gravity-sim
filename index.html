@@ -77,15 +77,15 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 const G          = 1;
 const DT         = 1;
-const MAX_BODIES = 22;
-const GRID_STEP  = 28;       // world units between grid lines (finer)
-const MAX_WARP   = 38;
-const WARP_STR   = 18000;
+const MAX_BODIES = 40;
+const GRID_STEP  = 32;       // world units between grid lines (finer)
+const MAX_WARP   = 120;
+const WARP_STR   = 45000;
 const SOFTENING  = 800;
-const TRAIL      = 0.13;
+const TRAIL      = 0.18;
 const MAX_CHARGE = 2800;
-const MASS_MIN   = 12;
-const MASS_MAX   = 900;
+const MASS_MIN   = 15;
+const MASS_MAX   = 1200;
 
 // ─── Perspective params ───────────────────────────────────────────────────────
 // World coords: (0,0) = center. Y negative = top/far, positive = bottom/near.
@@ -220,8 +220,8 @@ function stepPhysics() {
 
 // ─── Grid warp (world space, then project to screen) ─────────────────────────
 function drawGrid() {
-  const gW   = W  * 0.78;
-  const gH   = H  * 0.72;
+  const gW   = W  * 1.2;
+  const gH   = H  * 1.2;
   const cols = Math.ceil(gW * 2 / GRID_STEP) + 2;
   const rows = Math.ceil(gH * 2 / GRID_STEP) + 2;
 
@@ -235,7 +235,7 @@ function drawGrid() {
 
       for (const b of bodies) {
         const ex  = b.x - gwx, ey  = b.y - gwy;
-        const d2  = ex * ex + ey * ey + SOFTENING * 2;
+        const d2  = ex * ex + ey * ey + SOFTENING * 1.5;
         const str = Math.min(MAX_WARP, b.mass * WARP_STR / (d2 * Math.sqrt(d2)));
         dx += ex * str;
         dy += ey * str;
@@ -249,8 +249,8 @@ function drawGrid() {
     }
   }
 
-  ctx.strokeStyle = 'rgba(120, 50, 220, 0.18)';
-  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = 'rgba(168, 85, 247, 0.25)';
+  ctx.lineWidth = 1.0;
   ctx.beginPath();
 
   for (let r = 0; r <= rows; r++) {
