@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Gravity</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #03000a; overflow: hidden; width: 100vw; height: 100vh; }
+    canvas { position: fixed; inset: 0; }
+
+    #ui {
+      position: fixed; inset: 0; pointer-events: none; z-index: 10;
+      font-family: 'Space Mono', monospace;
+    }
+
+    #hint {
+      position: absolute;
+      bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+      left: 50%; transform: translateX(-50%);
+      font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
+      color: rgba(168, 85, 247, 0.35);
+      white-space: nowrap;
+      transition: opacity 1s;
+    }
+
+    #clear-btn {
+      position: absolute;
+      top: calc(22px + env(safe-area-inset-top, 0px));
+      right: calc(22px + env(safe-area-inset-right, 0px));
+      pointer-events: all;
+      font-family: 'Space Mono', monospace;
+      font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+      color: rgba(168, 85, 247, 0.5);
+      background: rgba(168, 85, 247, 0.06);
+      border: 1px solid rgba(168, 85, 247, 0.2);
+      border-radius: 100px; padding: 10px 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #clear-btn:hover, #clear-btn:active {
+      color: #fff;
+      background: rgba(168, 85, 247, 0.18);
+      border-color: rgba(168, 85, 247, 0.6);
+    }
+
+    /* Charge ring shown while holding */
+    #charge-ring {
+      position: absolute; pointer-events: none;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.5);
+      transform: translate(-50%, -50%);
+      display: none;
+      box-shadow: 0 0 12px rgba(168,85,247,0.4);
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <button id="clear-btn" onclick="resetSim()">reset</button>
+  <div id="hint">hold to add mass · release to drop</div>
+  <div id="charge-ring"></div>
+</div>
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+const G          = 1;        // gravitational constant (tuned for screen scale)
+const DT         = 1;        // time step per frame
+const MAX_BODIES = 22;
+const GRID_STEP  = 55;       // px between grid lines
+const MAX_WARP   = 40;       // max grid displacement in px
+const WARP_STR   = 18000;    // warp strength scalar
+const SOFTENING  = 800;      // softening factor (avoids singularity)
+const TRAIL      = 0.13;     // trail alpha per frame
+const MAX_CHARGE = 2800;     // ms to reach max mass
+const MASS_MIN   = 12;
+const MASS_MAX   = 900;
+
+// ─── Setup ────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─── Body class ───────────────────────────────────────────────────────────────
+class Body {
+  constructor(x, y, mass, vx = 0, vy = 0) {
+    this.x = x; this.y = y;
+    this.mass = mass;
+    this.vx = vx; this.vy = vy;
+    this.radius = massToRadius(mass);
+    this.dead = false;
+  }
+}
+
+function massToRadius(m) { return Math.cbrt(m) * 2.6; }
+
+function massToColor(m) {
+  if (m < 40)   return [160, 200, 255]; // icy blue
+  if (m < 120)  return [230, 240, 255]; // white
+  if (m < 300)  return [255, 210, 80];  // yellow
+  if (m < 600)  return [255, 140, 40];  // orange
+  if (m < 900)  return [220, 60,  40];  // red
+  return               [180, 80,  255]; // purple — black hole
+}
+
+// ─── Simulation state ─────────────────────────────────────────────────────────
+let bodies = [];
+
+function spawnOrbiter(cx, cy, centralMass, orbitR, bodyMass, direction = 1) {
+  const vOrbit = Math.sqrt(G * centralMass / orbitR) * direction;
+  const angle  = Math.random() * Math.PI * 2;
+  return new Body(
+    cx + Math.cos(angle) * orbitR,
+    cy + Math.sin(angle) * orbitR,
+    bodyMass,
+    -Math.sin(angle) * vOrbit,
+     Math.cos(angle) * vOrbit
+  );
+}
+
+function resetSim() {
+  bodies = [];
+  // Central star
+  bodies.push(new Body(W / 2, H / 2, 700, 0, 0));
+  // Orbiting bodies
+  bodies.push(spawnOrbiter(W/2, H/2, 700, 160, 25,  1));
+  bodies.push(spawnOrbiter(W/2, H/2, 700, 240, 50, -1));
+  bodies.push(spawnOrbiter(W/2, H/2, 700, 330, 18,  1));
+}
+resetSim();
+
+// ─── Physics ──────────────────────────────────────────────────────────────────
+function stepPhysics() {
+  const n = bodies.length;
+
+  // Accumulate accelerations
+  const ax = new Float64Array(n);
+  const ay = new Float64Array(n);
+
+  for (let i = 0; i < n; i++) {
+    if (bodies[i].dead) continue;
+    for (let j = i + 1; j < n; j++) {
+      if (bodies[j].dead) continue;
+      const dx   = bodies[j].x - bodies[i].x;
+      const dy   = bodies[j].y - bodies[i].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const rSum = bodies[i].radius + bodies[j].radius;
+
+      // Merge on collision
+      if (dist < rSum * 0.85) {
+        const tm = bodies[i].mass + bodies[j].mass;
+        bodies[i].x  = (bodies[i].x  * bodies[i].mass + bodies[j].x  * bodies[j].mass) / tm;
+        bodies[i].y  = (bodies[i].y  * bodies[i].mass + bodies[j].y  * bodies[j].mass) / tm;
+        bodies[i].vx = (bodies[i].vx * bodies[i].mass + bodies[j].vx * bodies[j].mass) / tm;
+        bodies[i].vy = (bodies[i].vy * bodies[i].mass + bodies[j].vy * bodies[j].mass) / tm;
+        bodies[i].mass   = tm;
+        bodies[i].radius = massToRadius(tm);
+        bodies[j].dead   = true;
+        continue;
+      }
+
+      const f  = G * bodies[i].mass * bodies[j].mass / (dist * dist + SOFTENING);
+      const fx = f * dx / dist;
+      const fy = f * dy / dist;
+      ax[i] += fx / bodies[i].mass;
+      ay[i] += fy / bodies[i].mass;
+      ax[j] -= fx / bodies[j].mass;
+      ay[j] -= fy / bodies[j].mass;
+    }
+  }
+
+  // Integrate
+  for (let i = 0; i < n; i++) {
+    if (bodies[i].dead) continue;
+    bodies[i].vx += ax[i] * DT;
+    bodies[i].vy += ay[i] * DT;
+    bodies[i].x  += bodies[i].vx * DT;
+    bodies[i].y  += bodies[i].vy * DT;
+  }
+
+  bodies = bodies.filter(b => !b.dead);
+}
+
+// ─── Grid warp ────────────────────────────────────────────────────────────────
+// Precompute displaced grid points, then draw lines through them.
+function drawGrid() {
+  const cols = Math.ceil(W / GRID_STEP) + 2;
+  const rows = Math.ceil(H / GRID_STEP) + 2;
+
+  // Build displaced point grid
+  // pts[row][col] = {x, y}
+  const pts = [];
+  for (let r = 0; r <= rows; r++) {
+    pts[r] = [];
+    for (let co = 0; co <= cols; co++) {
+      const bx = (co - 0.5) * GRID_STEP;
+      const by = (r  - 0.5) * GRID_STEP;
+      let dx = 0, dy = 0;
+
+      for (const b of bodies) {
+        const ex  = b.x - bx, ey  = b.y - by;
+        const d2  = ex * ex + ey * ey + SOFTENING * 2;
+        const str = Math.min(MAX_WARP, b.mass * WARP_STR / (d2 * Math.sqrt(d2)));
+        dx += ex * str;
+        dy += ey * str;
+      }
+
+      // Clamp total displacement
+      const dLen = Math.sqrt(dx*dx + dy*dy);
+      if (dLen > MAX_WARP) { dx = dx/dLen*MAX_WARP; dy = dy/dLen*MAX_WARP; }
+      pts[r][co] = { x: bx + dx, y: by + dy };
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(120, 50, 220, 0.18)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+
+  // Horizontal lines
+  for (let r = 0; r <= rows; r++) {
+    ctx.moveTo(pts[r][0].x, pts[r][0].y);
+    for (let co = 1; co <= cols; co++) {
+      ctx.lineTo(pts[r][co].x, pts[r][co].y);
+    }
+  }
+  // Vertical lines
+  for (let co = 0; co <= cols; co++) {
+    ctx.moveTo(pts[0][co].x, pts[0][co].y);
+    for (let r = 1; r <= rows; r++) {
+      ctx.lineTo(pts[r][co].x, pts[r][co].y);
+    }
+  }
+  ctx.stroke();
+}
+
+// ─── Render bodies ────────────────────────────────────────────────────────────
+function drawBodies() {
+  for (const b of bodies) {
+    const [r, g, bl] = massToColor(b.mass);
+    const isBlackHole = b.mass >= 900;
+
+    if (isBlackHole) {
+      // Dark core with bright ring
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#08001a';
+      ctx.fill();
+
+      const ring = ctx.createRadialGradient(b.x, b.y, b.radius * 0.8, b.x, b.y, b.radius * 2.2);
+      ring.addColorStop(0,   `rgba(${r},${g},${bl},0.9)`);
+      ring.addColorStop(0.4, `rgba(${r},${g},${bl},0.3)`);
+      ring.addColorStop(1,   `rgba(${r},${g},${bl},0)`);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.radius * 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = ring; ctx.fill();
+    } else {
+      // Glow halo
+      const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.radius * 3.5);
+      glow.addColorStop(0,   `rgba(${r},${g},${bl},0.5)`);
+      glow.addColorStop(0.3, `rgba(${r},${g},${bl},0.15)`);
+      glow.addColorStop(1,   `rgba(${r},${g},${bl},0)`);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.radius * 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = glow; ctx.fill();
+
+      // Core
+      const core = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
+      core.addColorStop(0,   `rgba(255,255,255,0.95)`);
+      core.addColorStop(0.4, `rgba(${r},${g},${bl},0.9)`);
+      core.addColorStop(1,   `rgba(${Math.round(r*0.6)},${Math.round(g*0.6)},${Math.round(bl*0.6)},0.8)`);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+      ctx.fillStyle = core; ctx.fill();
+    }
+  }
+}
+
+// ─── Main loop ────────────────────────────────────────────────────────────────
+function frame() {
+  requestAnimationFrame(frame);
+
+  // Trail fade (dark semi-transparent fill = motion blur / orbit trails)
+  ctx.fillStyle = `rgba(3, 0, 10, ${TRAIL})`;
+  ctx.fillRect(0, 0, W, H);
+
+  stepPhysics();
+  drawGrid();
+  drawBodies();
+  drawChargePreview();
+}
+frame();
+
+// ─── Input — press + hold to charge mass, release to drop ────────────────────
+const ring      = document.getElementById('charge-ring');
+const hint      = document.getElementById('hint');
+let charging    = false;
+let chargeStart = 0;
+let chargeX     = 0;
+let chargeY     = 0;
+let hintTimer   = null;
+
+function fadeHint() {
+  clearTimeout(hintTimer);
+  hint.style.opacity = '1';
+  hintTimer = setTimeout(() => hint.style.opacity = '0', 3000);
+}
+fadeHint();
+
+function startCharge(x, y) {
+  if (bodies.length >= MAX_BODIES) return;
+  charging    = true;
+  chargeStart = performance.now();
+  chargeX     = x;
+  chargeY     = y;
+  ring.style.display = 'block';
+  ring.style.left    = x + 'px';
+  ring.style.top     = y + 'px';
+}
+
+function releaseCharge() {
+  if (!charging) return;
+  charging = false;
+  ring.style.display = 'none';
+
+  const held = Math.min(performance.now() - chargeStart, MAX_CHARGE);
+  const mass = MASS_MIN + (held / MAX_CHARGE) * (MASS_MAX - MASS_MIN);
+
+  if (bodies.length < MAX_BODIES) {
+    bodies.push(new Body(chargeX, chargeY, mass));
+    fadeHint();
+  }
+}
+
+function drawChargePreview() {
+  if (!charging) return;
+  const held   = Math.min(performance.now() - chargeStart, MAX_CHARGE);
+  const frac   = held / MAX_CHARGE;
+  const mass   = MASS_MIN + frac * (MASS_MAX - MASS_MIN);
+  const radius = massToRadius(mass);
+  const [r, g, b] = massToColor(mass);
+
+  // Update ring element size
+  const sz = radius * 2 + 12;
+  ring.style.width  = sz + 'px';
+  ring.style.height = sz + 'px';
+  ring.style.borderColor = `rgba(${r},${g},${b},0.7)`;
+  ring.style.boxShadow   = `0 0 ${8 + frac * 20}px rgba(${r},${g},${b},0.4)`;
+}
+
+// Pointer events (unified mouse + touch)
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  startCharge(e.clientX, e.clientY);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!charging) return;
+  chargeX = e.clientX;
+  chargeY = e.clientY;
+  ring.style.left = chargeX + 'px';
+  ring.style.top  = chargeY + 'px';
+});
+canvas.addEventListener('pointerup',     releaseCharge);
+canvas.addEventListener('pointercancel', releaseCharge);
+// Prevent default touch scroll behavior on canvas
+canvas.style.touchAction = 'none';
+</script>
+</body>
+</html>
