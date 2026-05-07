@@ -7,17 +7,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      background: #03000a; 
-      overflow: hidden; 
-      width: 100vw; 
-      height: 100vh;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      touch-action: none;
-    }
-    canvas { position: fixed; inset: 0; touch-action: none; }
+    body { background: #03000a; overflow: hidden; width: 100vw; height: 100vh; }
+    canvas { position: fixed; inset: 0; }
 
     #ui {
       position: fixed; inset: 0; pointer-events: none; z-index: 10;
@@ -77,15 +68,15 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 const G          = 1;
 const DT         = 1;
-const MAX_BODIES = 40;
-const GRID_STEP  = 32;       // world units between grid lines (finer)
-const MAX_WARP   = 120;
-const WARP_STR   = 45000;
+const MAX_BODIES = 22;
+const GRID_STEP  = 28;       // world units between grid lines (finer)
+const MAX_WARP   = 38;
+const WARP_STR   = 18000;
 const SOFTENING  = 800;
-const TRAIL      = 0.18;
-const MAX_CHARGE = 2800;
-const MASS_MIN   = 15;
-const MASS_MAX   = 1200;
+const TRAIL      = 0.30;
+const MAX_CHARGE = 1500;
+const MASS_MIN   = 12;
+const MASS_MAX   = 900;
 
 // ─── Perspective params ───────────────────────────────────────────────────────
 // World coords: (0,0) = center. Y negative = top/far, positive = bottom/near.
@@ -220,8 +211,8 @@ function stepPhysics() {
 
 // ─── Grid warp (world space, then project to screen) ─────────────────────────
 function drawGrid() {
-  const gW   = W  * 1.2;
-  const gH   = H  * 1.2;
+  const gW   = W  * 0.78;
+  const gH   = H  * 0.72;
   const cols = Math.ceil(gW * 2 / GRID_STEP) + 2;
   const rows = Math.ceil(gH * 2 / GRID_STEP) + 2;
 
@@ -235,7 +226,7 @@ function drawGrid() {
 
       for (const b of bodies) {
         const ex  = b.x - gwx, ey  = b.y - gwy;
-        const d2  = ex * ex + ey * ey + SOFTENING * 1.5;
+        const d2  = ex * ex + ey * ey + SOFTENING * 2;
         const str = Math.min(MAX_WARP, b.mass * WARP_STR / (d2 * Math.sqrt(d2)));
         dx += ex * str;
         dy += ey * str;
@@ -249,8 +240,8 @@ function drawGrid() {
     }
   }
 
-  ctx.strokeStyle = 'rgba(168, 85, 247, 0.25)';
-  ctx.lineWidth = 1.0;
+  ctx.strokeStyle = 'rgba(120, 50, 220, 0.18)';
+  ctx.lineWidth = 0.8;
   ctx.beginPath();
 
   for (let r = 0; r <= rows; r++) {
@@ -268,40 +259,20 @@ function drawGrid() {
 function drawBodies() {
   for (const b of bodies) {
     const [r, g, bl] = massToColor(b.mass);
-    const isBlackHole = b.mass >= 900;
     const { x: sx, y: sy, s: ds } = toScreen(b.x, b.y);
     const radius = b.radius * ds;
 
-    if (isBlackHole) {
-      ctx.beginPath();
-      ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-      ctx.fillStyle = '#08001a';
-      ctx.fill();
-
-      const ring = ctx.createRadialGradient(sx, sy, radius * 0.8, sx, sy, radius * 2.2);
-      ring.addColorStop(0,   `rgba(${r},${g},${bl},0.9)`);
-      ring.addColorStop(0.4, `rgba(${r},${g},${bl},0.3)`);
-      ring.addColorStop(1,   `rgba(${r},${g},${bl},0)`);
-      ctx.beginPath();
-      ctx.arc(sx, sy, radius * 2.2, 0, Math.PI * 2);
-      ctx.fillStyle = ring; ctx.fill();
-    } else {
-      const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 3.5);
-      glow.addColorStop(0,   `rgba(${r},${g},${bl},0.5)`);
-      glow.addColorStop(0.3, `rgba(${r},${g},${bl},0.15)`);
-      glow.addColorStop(1,   `rgba(${r},${g},${bl},0)`);
-      ctx.beginPath();
-      ctx.arc(sx, sy, radius * 3.5, 0, Math.PI * 2);
-      ctx.fillStyle = glow; ctx.fill();
-
-      const core = ctx.createRadialGradient(sx - radius*0.3, sy - radius*0.3, 0, sx, sy, radius);
-      core.addColorStop(0,   `rgba(255,255,255,0.95)`);
-      core.addColorStop(0.4, `rgba(${r},${g},${bl},0.9)`);
-      core.addColorStop(1,   `rgba(${Math.round(r*0.6)},${Math.round(g*0.6)},${Math.round(bl*0.6)},0.8)`);
-      ctx.beginPath();
-      ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-      ctx.fillStyle = core; ctx.fill();
-    }
+    // Solid core only - no glow
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.fill();
+    
+    // Tiny highlight for depth
+    ctx.beginPath();
+    ctx.arc(sx - radius*0.2, sy - radius*0.2, radius * 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fill();
   }
 }
 
@@ -334,7 +305,7 @@ function fadeHint() {
 fadeHint();
 
 function startCharge(sx, sy) {
-  if (bodies.length >= MAX_BODIES) return;
+  console.log('Attempting to start charge at screen:', sx, sy);
   charging    = true;
   chargeStart = performance.now();
   const w = fromScreen(sx, sy);
@@ -356,16 +327,16 @@ function moveCharge(sx, sy) {
 
 function releaseCharge() {
   if (!charging) return;
+  console.log('Releasing charge. Current body count:', bodies.length);
   charging = false;
   ring.style.display = 'none';
 
   const held = Math.min(performance.now() - chargeStart, MAX_CHARGE);
   const mass = MASS_MIN + (held / MAX_CHARGE) * (MASS_MAX - MASS_MIN);
 
-  if (bodies.length < MAX_BODIES) {
-    bodies.push(new Body(chargeWX, chargeWY, mass));
-    fadeHint();
-  }
+  bodies.push(new Body(chargeWX, chargeWY, mass));
+  console.log('Added body. New count:', bodies.length);
+  fadeHint();
 }
 
 function drawChargePreview() {
@@ -383,33 +354,48 @@ function drawChargePreview() {
   ring.style.boxShadow   = `0 0 ${8 + frac * 20}px rgba(${r},${g},${b},0.4)`;
 }
 
-// Unified pointer input
+// Unified pointer + touch input (touch fallback for iOS Safari quirks)
+canvas.style.touchAction = 'none';
+
 let _pointerDown = false;
 
-window.addEventListener('pointerdown', e => {
-  if (e.target === canvas) {
-    e.preventDefault();
-    _pointerDown = true;
-    startCharge(e.clientX, e.clientY);
-  }
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  _pointerDown = true;
+  startCharge(e.clientX, e.clientY);
 }, { passive: false });
 
-window.addEventListener('pointermove', e => {
+canvas.addEventListener('pointermove', e => {
   if (_pointerDown) moveCharge(e.clientX, e.clientY);
 });
 
-window.addEventListener('pointerup', e => {
-  if (_pointerDown) {
-    _pointerDown = false;
-    releaseCharge();
-  }
-});
+canvas.addEventListener('pointerup', () => { _pointerDown = false; releaseCharge(); });
+canvas.addEventListener('pointercancel', () => { _pointerDown = false; releaseCharge(); });
 
-window.addEventListener('pointercancel', e => {
-  if (_pointerDown) {
-    _pointerDown = false;
-    releaseCharge();
-  }
+// Touch fallback — iOS Safari sometimes misfires pointer events
+canvas.addEventListener('touchstart', e => {
+  if (_pointerDown) return; // pointer events already handled it
+  e.preventDefault();
+  const t = e.touches[0];
+  startCharge(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  if (_pointerDown) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  moveCharge(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  if (_pointerDown) return;
+  e.preventDefault();
+  releaseCharge();
+}, { passive: false });
+
+canvas.addEventListener('touchcancel', e => {
+  if (_pointerDown) return;
+  releaseCharge();
 });
 </script>
 </body>
