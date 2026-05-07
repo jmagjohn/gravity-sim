@@ -219,6 +219,25 @@ function stepPhysics() {
     }
   }
 
+  // ─── Edge Upturn Force ───
+  // Pushes bodies back toward the center when they get near the edges
+  const edgeW = W * 0.9;
+  const edgeH = H * 0.9;
+  const edgeStr = 0.05;
+
+  for (let i = 0; i < n; i++) {
+    if (bodies[i].dead) continue;
+    
+    // Horizontal edges
+    if (Math.abs(bodies[i].x) > edgeW) {
+      ax[i] -= Math.sign(bodies[i].x) * (Math.abs(bodies[i].x) - edgeW) * edgeStr;
+    }
+    // Vertical edges
+    if (Math.abs(bodies[i].y) > edgeH) {
+      ay[i] -= Math.sign(bodies[i].y) * (Math.abs(bodies[i].y) - edgeH) * edgeStr;
+    }
+  }
+
   for (let i = 0; i < n; i++) {
     if (bodies[i].dead) continue;
     bodies[i].vx += ax[i] * DT;
@@ -252,6 +271,13 @@ function drawGrid() {
         dx += ex * str;
         dy += ey * str;
       }
+
+      // ─── Visual Edge Upturn ───
+      const edgeW = W * 0.9;
+      const edgeH = H * 0.9;
+      const edgeVisStr = 0.4;
+      if (Math.abs(gwx) > edgeW) dx -= Math.sign(gwx) * (Math.abs(gwx) - edgeW) * edgeVisStr;
+      if (Math.abs(gwy) > edgeH) dy -= Math.sign(gwy) * (Math.abs(gwy) - edgeH) * edgeVisStr;
 
       const dLen = Math.sqrt(dx*dx + dy*dy);
       if (dLen > MAX_WARP) { dx = dx/dLen*MAX_WARP; dy = dy/dLen*MAX_WARP; }
