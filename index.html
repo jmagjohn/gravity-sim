@@ -36,23 +36,27 @@
 
     #clear-btn {
       position: absolute;
-      top: calc(22px + env(safe-area-inset-top, 0px));
-      right: calc(22px + env(safe-area-inset-right, 0px));
+      top: calc(24px + env(safe-area-inset-top, 0px));
+      right: calc(24px + env(safe-area-inset-right, 0px));
       pointer-events: all;
       font-family: 'Space Mono', monospace;
-      font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
-      color: rgba(168, 85, 247, 0.5);
-      background: rgba(168, 85, 247, 0.06);
-      border: 1px solid rgba(168, 85, 247, 0.2);
-      border-radius: 100px; padding: 10px 20px;
+      font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+      color: #fff;
+      background: #7c3aed;
+      border: none;
+      border-radius: 8px; padding: 12px 24px;
       cursor: pointer;
+      box-shadow: 0 4px 14px 0 rgba(124, 58, 237, 0.5);
       transition: all 0.2s;
       -webkit-tap-highlight-color: transparent;
     }
-    #clear-btn:hover, #clear-btn:active {
-      color: #fff;
-      background: rgba(168, 85, 247, 0.18);
-      border-color: rgba(168, 85, 247, 0.6);
+    #clear-btn:hover {
+      background: #8b5cf6;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4);
+    }
+    #clear-btn:active {
+      transform: translateY(1px);
     }
 
     #charge-ring {
@@ -86,10 +90,10 @@
 const G          = 1;
 const DT         = 1;
 const MAX_BODIES = 40;
-const GRID_STEP  = 32;       // world units between grid lines (finer)
-const MAX_WARP   = 120;
-const WARP_STR   = 45000;
-const SOFTENING  = 800;
+const GRID_STEP  = 20;       // much finer grid for smoothness
+const MAX_WARP   = 100;      // cap slightly lower to prevent "jaggies"
+const WARP_STR   = 35000;    // strength balanced for finer resolution
+const SOFTENING  = 600;      // lower softening for more localized curves
 const TRAIL      = 0.18;
 const MAX_CHARGE = 2800;
 const MASS_MIN   = 15;
@@ -243,7 +247,7 @@ function drawGrid() {
 
       for (const b of bodies) {
         const ex  = b.x - gwx, ey  = b.y - gwy;
-        const d2  = ex * ex + ey * ey + SOFTENING * 1.5;
+        const d2  = ex * ex + ey * ey + 1000; // higher softening specifically for grid points
         const str = Math.min(MAX_WARP, b.mass * WARP_STR / (d2 * Math.sqrt(d2)));
         dx += ex * str;
         dy += ey * str;
