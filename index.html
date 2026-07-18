@@ -8,7 +8,7 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
-      background: #03000a; 
+      background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #03000a 70%); 
       overflow: hidden; 
       width: 100vw; 
       height: 100vh;
@@ -17,7 +17,8 @@
       -webkit-touch-callout: none;
       touch-action: none;
     }
-    canvas { position: fixed; inset: 0; touch-action: none; }
+    #bg-stars { position: fixed; inset: 0; z-index: -1; }
+    canvas { position: fixed; inset: 0; touch-action: none; background: transparent; }
 
     #ui {
       position: fixed; inset: 0; pointer-events: none; z-index: 10;
@@ -90,6 +91,7 @@
   </style>
 </head>
 <body>
+<canvas id="bg-stars"></canvas>
 <canvas id="c"></canvas>
 <div id="ui">
   <button id="clear-btn" onclick="resetSim()">reset</button>
@@ -99,6 +101,27 @@
 </div>
 
 <script>
+// ─── Background Stars ────────────────────────────────────────────────────────
+const starCanvas = document.getElementById('bg-stars');
+const starCtx = starCanvas.getContext('2d');
+function initStars() {
+  starCanvas.width = window.innerWidth;
+  starCanvas.height = window.innerHeight;
+  starCtx.fillStyle = '#fff';
+  starCtx.clearRect(0,0, starCanvas.width, starCanvas.height);
+  for(let i=0; i<300; i++) {
+    const x = Math.random() * starCanvas.width;
+    const y = Math.random() * starCanvas.height;
+    const r = Math.random() * 1.2;
+    starCtx.globalAlpha = Math.random() * 0.8;
+    starCtx.beginPath();
+    starCtx.arc(x, y, r, 0, Math.PI * 2);
+    starCtx.fill();
+  }
+}
+initStars();
+window.addEventListener('resize', initStars);
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const G          = 1;
 const DT         = 1;
@@ -260,7 +283,7 @@ function drawGrid() {
 
       for (const b of bodies) {
         const ex  = b.x - gwx, ey  = b.y - gwy;
-        const d2  = ex * ex + ey * ey + 1000; // higher softening specifically for grid points
+        const d2  = ex * ex + ey * ey + 1000;
         const str = Math.min(MAX_WARP, b.mass * WARP_STR / (d2 * Math.sqrt(d2)));
         dx += ex * str;
         dy += ey * str;
@@ -270,7 +293,7 @@ function drawGrid() {
       if (dLen > MAX_WARP) { dx = dx/dLen*MAX_WARP; dy = dy/dLen*MAX_WARP; }
 
       const p = toScreen(gwx + dx, gwy + dy);
-      p.distorted = (dLen > 2.5); // Flag points that are moved by more than 2.5 units
+      p.distorted = (dLen > 2.5);
       pts[r][co] = p;
     }
   }
@@ -289,7 +312,7 @@ function drawGrid() {
   }
   ctx.stroke();
 
-  // Second pass: Draw "active" lines (the connections/dips) in a different color
+  // Highlighted curves
   ctx.strokeStyle = 'rgba(120, 180, 255, 0.15)';
   ctx.lineWidth = 1.0;
   ctx.beginPath();
@@ -298,8 +321,6 @@ function drawGrid() {
       const p1 = pts[r][co];
       const p2 = pts[r][co+1];
       const p3 = pts[r+1][co];
-      
-      // If the point is significantly warped, highlight it
       if (p1.distorted) {
         if (p2) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); }
         if (p3) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p3.x, p3.y); }
@@ -316,16 +337,25 @@ function drawBodies() {
     const { x: sx, y: sy, s: ds } = toScreen(b.x, b.y);
     const radius = b.radius * ds;
 
-    // Solid core only - no glow
+    // Atmospheric Glow
+    const grad = ctx.createRadialGradient(sx, sy, radius*0.5, sx, sy, radius*2.5);
+    grad.addColorStop(0, `rgba(${r},${g},${bl},0.3)`);
+    grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Solid Core
     ctx.beginPath();
     ctx.arc(sx, sy, radius, 0, Math.PI * 2);
     ctx.fillStyle = `rgb(${r},${g},${bl})`;
     ctx.fill();
     
-    // Tiny highlight for depth
+    // Shine / Terminator
     ctx.beginPath();
-    ctx.arc(sx - radius*0.2, sy - radius*0.2, radius * 0.2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.arc(sx - radius*0.3, sy - radius*0.3, radius * 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
     ctx.fill();
   }
 }
@@ -349,11 +379,10 @@ const clearBtn = document.getElementById('clear-btn');
 
 let charging    = false;
 let chargeStart = 0;
-let startWX = 0, startWY = 0;    // world coords for body placement
-let startSX = 0, startSY = 0;    // screen coords for body placement
-let currentSX = 0, currentSY = 0; // current screen coords for velocity
+let startWX = 0, startWY = 0;
+let startSX = 0, startSY = 0;
+let currentSX = 0, currentSY = 0;
 
-// Tutorial State
 let tutorialStep = 0;
 const steps = [
   "Tap & hold to create a star",
@@ -367,12 +396,8 @@ function updateTutorial() {
     hint.textContent = steps[tutorialStep];
     hint.style.opacity = '1';
     hint.classList.add('pulse');
-    
-    if (tutorialStep === 3) {
-      clearBtn.classList.add('pulse');
-    } else {
-      clearBtn.classList.remove('pulse');
-    }
+    if (tutorialStep === 3) clearBtn.classList.add('pulse');
+    else clearBtn.classList.remove('pulse');
   } else {
     hint.style.opacity = '0';
     clearBtn.classList.remove('pulse');
@@ -391,25 +416,17 @@ function startCharge(sx, sy) {
   ring.style.display = 'block';
   ring.style.left = sx + 'px';
   ring.style.top  = sy + 'px';
-  
   line.style.display = 'block';
   line.style.left = sx + 'px';
   line.style.top  = sy + 'px';
-
-  if (tutorialStep === 0) {
-    tutorialStep = 1;
-    updateTutorial();
-  }
+  if (tutorialStep === 0) { tutorialStep = 1; updateTutorial(); }
 }
 
 function moveCharge(sx, sy) {
   if (!charging) return;
-  currentSX = sx;
-  currentSY = sy;
-
+  currentSX = sx; currentSY = sy;
   if (tutorialStep === 1 && (Math.abs(sx - startSX) > 20 || Math.abs(sy - startSY) > 20)) {
-    tutorialStep = 2;
-    updateTutorial();
+    tutorialStep = 2; updateTutorial();
   }
 }
 
@@ -428,21 +445,17 @@ function releaseCharge() {
   const vScale = 0.008 / spawnProj.s; 
   
   bodies.push(new Body(startWX, startWY, mass, dx * vScale, dy * vScale / Y_SQUISH));
-
-  if (tutorialStep === 2) {
-    tutorialStep = 3;
-    updateTutorial();
-  }
+  if (tutorialStep === 2) { tutorialStep = 3; updateTutorial(); }
 }
 
-// Intercept reset to progress tutorial
-const originalReset = resetSim;
 window.resetSim = () => {
-  originalReset();
-  if (tutorialStep === 3) {
-    tutorialStep = 4;
-    updateTutorial();
-  }
+  bodies = [];
+  const R = Math.min(W, H) * 0.36;
+  bodies.push(new Body(0, 0, 700, 0, 0));
+  bodies.push(spawnOrbiter(0, 0, 700, R * 0.44, 25,  1));
+  bodies.push(spawnOrbiter(0, 0, 700, R * 0.66, 50, -1));
+  bodies.push(spawnOrbiter(0, 0, 700, R * 0.90, 18,  1));
+  if (tutorialStep === 3) { tutorialStep = 4; updateTutorial(); }
 };
 
 function drawChargePreview() {
@@ -459,47 +472,21 @@ function drawChargePreview() {
   ring.style.borderColor = `rgba(${r},${g},${b},0.7)`;
   ring.style.boxShadow   = `0 0 ${8 + frac * 20}px rgba(${r},${g},${b},0.4)`;
   
-  // Update velocity line
   const dx = currentSX - startSX;
   const dy = currentSY - startSY;
   const dist = Math.sqrt(dx*dx + dy*dy);
   const angle = Math.atan2(dy, dx);
-  
   line.style.width = dist + 'px';
   line.style.transform = `rotate(${angle}rad)`;
   line.style.background = `rgba(${r},${g},${b},0.6)`;
 }
 
-// Unified pointer input
+window.addEventListener('pointerdown', e => { if (e.target === canvas) { e.preventDefault(); _pointerDown = true; startCharge(e.clientX, e.clientY); } }, { passive: false });
+window.addEventListener('pointermove', e => { if (_pointerDown) moveCharge(e.clientX, e.clientY); });
+window.addEventListener('pointerup', e => { if (_pointerDown) { _pointerDown = false; releaseCharge(); } });
+window.addEventListener('pointercancel', e => { if (_pointerDown) { _pointerDown = false; releaseCharge(); } });
+
 let _pointerDown = false;
-
-window.addEventListener('pointerdown', e => {
-  if (e.target === canvas) {
-    e.preventDefault();
-    _pointerDown = true;
-    startCharge(e.clientX, e.clientY);
-  }
-}, { passive: false });
-
-window.addEventListener('pointermove', e => {
-  if (_pointerDown) moveCharge(e.clientX, e.clientY);
-});
-
-window.addEventListener('pointerup', e => {
-  if (_pointerDown) {
-    _pointerDown = false;
-    releaseCharge();
-  }
-});
-
-window.addEventListener('pointercancel', e => {
-  if (_pointerDown) {
-    _pointerDown = false;
-    releaseCharge();
-  }
-});
-
-// Start the simulation loop AFTER everything is initialized
 frame();
 </script>
 </body>
