@@ -4,13 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Gravity</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%AA%90%3C/text%3E%3C/svg%3E" />
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%AA%90%3C/text%3E%3C/svg%3E" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
-      background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #03000a 70%); 
+      background: #03000a;
+      background-image: radial-gradient(white, rgba(255,255,255,.2) 2px, transparent 40px),
+                        radial-gradient(white, rgba(255,255,255,.15) 1px, transparent 30px),
+                        radial-gradient(white, rgba(255,255,255,.1) 2px, transparent 40px),
+                        radial-gradient(rgba(255,255,255,.4), rgba(255,255,255,.1) 2px, transparent 30px);
+      background-size: 550px 550px, 350px 350px, 250px 250px, 150px 150px;
+      background-position: 0 0, 40px 60px, 130px 270px, 70px 100px;
       overflow: hidden; 
       width: 100vw; 
       height: 100vh;
@@ -19,8 +23,7 @@
       -webkit-touch-callout: none;
       touch-action: none;
     }
-    #bg-stars { position: fixed; inset: 0; z-index: -1; }
-    canvas { position: fixed; inset: 0; touch-action: none; background: transparent; }
+    canvas { position: fixed; inset: 0; touch-action: none; }
 
     #ui {
       position: fixed; inset: 0; pointer-events: none; z-index: 10;
@@ -93,7 +96,6 @@
   </style>
 </head>
 <body>
-<canvas id="bg-stars"></canvas>
 <canvas id="c"></canvas>
 <div id="ui">
   <button id="clear-btn" onclick="resetSim()">reset</button>
@@ -103,45 +105,21 @@
 </div>
 
 <script>
-// ─── Background Stars ────────────────────────────────────────────────────────
-const starCanvas = document.getElementById('bg-stars');
-const starCtx = starCanvas.getContext('2d');
-function initStars() {
-  starCanvas.width = window.innerWidth;
-  starCanvas.height = window.innerHeight;
-  starCtx.fillStyle = '#fff';
-  starCtx.clearRect(0,0, starCanvas.width, starCanvas.height);
-  for(let i=0; i<300; i++) {
-    const x = Math.random() * starCanvas.width;
-    const y = Math.random() * starCanvas.height;
-    const r = Math.random() * 1.2;
-    starCtx.globalAlpha = Math.random() * 0.8;
-    starCtx.beginPath();
-    starCtx.arc(x, y, r, 0, Math.PI * 2);
-    starCtx.fill();
-  }
-}
-initStars();
-window.addEventListener('resize', initStars);
-
 // ─── Constants ────────────────────────────────────────────────────────────────
 const G          = 1;
 const DT         = 1;
 const MAX_BODIES = 40;
-const GRID_STEP  = 20;       // much finer grid for smoothness
-const MAX_WARP   = 100;      // cap slightly lower to prevent "jaggies"
-const WARP_STR   = 35000;    // strength balanced for finer resolution
-const SOFTENING  = 600;      // lower softening for more localized curves
-const TRAIL      = 0.18;
+const GRID_STEP  = 25; 
+const MAX_WARP   = 60;
+const WARP_STR   = 25000;
+const SOFTENING  = 1000;
+const TRAIL      = 0.15;
 const MAX_CHARGE = 2800;
 const MASS_MIN   = 15;
 const MASS_MAX   = 1200;
 
-// ─── Perspective params ───────────────────────────────────────────────────────
-// World coords: (0,0) = center. Y negative = top/far, positive = bottom/near.
-// Squishing Y and widening X at the bottom gives an angled-view illusion.
-const Y_SQUISH = 0.44;   // vertical compression
-const X_PERSP  = 0.22;   // x spreads wider toward viewer (bottom)
+const Y_SQUISH = 0.44;
+const X_PERSP  = 0.22;
 
 function toScreen(wx, wy) {
   const yFrac  = wy / Math.max(H * 0.5, 1);
@@ -160,7 +138,6 @@ function fromScreen(sx, sy) {
   return { x: (sx - W * 0.5) / xScale, y: wy };
 }
 
-// ─── Setup ────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
 let W, H;
@@ -172,7 +149,6 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ─── Body class (world coordinates) ──────────────────────────────────────────
 class Body {
   constructor(x, y, mass, vx = 0, vy = 0) {
     this.x = x; this.y = y;
@@ -194,7 +170,6 @@ function massToColor(m) {
   return              [180, 80,  255];
 }
 
-// ─── Simulation state ─────────────────────────────────────────────────────────
 let bodies = [];
 
 function spawnOrbiter(cx, cy, centralMass, orbitR, bodyMass, direction = 1) {
@@ -211,7 +186,6 @@ function spawnOrbiter(cx, cy, centralMass, orbitR, bodyMass, direction = 1) {
 
 function resetSim() {
   bodies = [];
-  // Scale orbits to screen size so they're always visible
   const R = Math.min(W, H) * 0.36;
   bodies.push(new Body(0, 0, 700, 0, 0));
   bodies.push(spawnOrbiter(0, 0, 700, R * 0.44, 25,  1));
@@ -220,7 +194,6 @@ function resetSim() {
 }
 resetSim();
 
-// ─── Physics (world space) ────────────────────────────────────────────────────
 function stepPhysics() {
   const n = bodies.length;
   const ax = new Float64Array(n);
@@ -264,11 +237,9 @@ function stepPhysics() {
     bodies[i].x  += bodies[i].vx * DT;
     bodies[i].y  += bodies[i].vy * DT;
   }
-
   bodies = bodies.filter(b => !b.dead);
 }
 
-// ─── Grid warp (world space, then project to screen) ─────────────────────────
 function drawGrid() {
   const gW   = W  * 1.2;
   const gH   = H  * 1.2;
@@ -285,84 +256,72 @@ function drawGrid() {
 
       for (const b of bodies) {
         const ex  = b.x - gwx, ey  = b.y - gwy;
-        const d2  = ex * ex + ey * ey + 1000;
+        const d2  = ex * ex + ey * ey + 5000;
         const str = Math.min(MAX_WARP, b.mass * WARP_STR / (d2 * Math.sqrt(d2)));
         dx += ex * str;
         dy += ey * str;
       }
 
-      const dLen = Math.sqrt(dx*dx + dy*dy);
-      if (dLen > MAX_WARP) { dx = dx/dLen*MAX_WARP; dy = dy/dLen*MAX_WARP; }
-
-      const p = toScreen(gwx + dx, gwy + dy);
-      p.distorted = (dLen > 2.5);
-      pts[r][co] = p;
+      pts[r][co] = toScreen(gwx + dx, gwy + dy);
     }
   }
 
-  ctx.strokeStyle = 'rgba(168, 85, 247, 0.08)';
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-
-  for (let r = 0; r <= rows; r++) {
-    ctx.moveTo(pts[r][0].x, pts[r][0].y);
-    for (let co = 1; co <= cols; co++) ctx.lineTo(pts[r][co].x, pts[r][co].y);
-  }
-  for (let co = 0; co <= cols; co++) {
-    ctx.moveTo(pts[0][co].x, pts[0][co].y);
-    for (let r = 1; r <= rows; r++) ctx.lineTo(pts[r][co].x, pts[r][co].y);
-  }
-  ctx.stroke();
-
-  // Highlighted curves
-  ctx.strokeStyle = 'rgba(120, 180, 255, 0.15)';
+  ctx.strokeStyle = 'rgba(168, 85, 247, 0.15)';
   ctx.lineWidth = 1.0;
   ctx.beginPath();
   for (let r = 0; r < rows; r++) {
     for (let co = 0; co < cols; co++) {
-      const p1 = pts[r][co];
-      const p2 = pts[r][co+1];
-      const p3 = pts[r+1][co];
-      if (p1.distorted) {
-        if (p2) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); }
-        if (p3) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p3.x, p3.y); }
+      const p = pts[r][co];
+      if (co === 0) ctx.moveTo(p.x, p.y);
+      else {
+        const pPrev = pts[r][co-1];
+        const cpX = (pPrev.x + p.x) / 2;
+        const cpY = (pPrev.y + p.y) / 2;
+        ctx.quadraticCurveTo(cpX, cpY, p.x, p.y);
+      }
+    }
+  }
+  for (let co = 0; co < cols; co++) {
+    for (let r = 0; r < rows; r++) {
+      const p = pts[r][co];
+      if (r === 0) ctx.moveTo(p.x, p.y);
+      else {
+        const pPrev = pts[r-1][co];
+        const cpX = (pPrev.x + p.x) / 2;
+        const cpY = (pPrev.y + p.y) / 2;
+        ctx.quadraticCurveTo(cpX, cpY, p.x, p.y);
       }
     }
   }
   ctx.stroke();
 }
 
-// ─── Render bodies ────────────────────────────────────────────────────────────
 function drawBodies() {
   for (const b of bodies) {
     const [r, g, bl] = massToColor(b.mass);
     const { x: sx, y: sy, s: ds } = toScreen(b.x, b.y);
     const radius = b.radius * ds;
 
-    // Atmospheric Glow
-    const grad = ctx.createRadialGradient(sx, sy, radius*0.5, sx, sy, radius*2.5);
-    grad.addColorStop(0, `rgba(${r},${g},${bl},0.3)`);
+    const grad = ctx.createRadialGradient(sx, sy, radius*0.1, sx, sy, radius*3);
+    grad.addColorStop(0, `rgba(${r},${g},${bl},0.5)`);
     grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(sx, sy, radius * 2.5, 0, Math.PI * 2);
+    ctx.arc(sx, sy, radius * 3, 0, Math.PI * 2);
     ctx.fill();
 
-    // Solid Core
     ctx.beginPath();
     ctx.arc(sx, sy, radius, 0, Math.PI * 2);
     ctx.fillStyle = `rgb(${r},${g},${bl})`;
     ctx.fill();
     
-    // Shine / Terminator
     ctx.beginPath();
     ctx.arc(sx - radius*0.3, sy - radius*0.3, radius * 0.8, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.fill();
   }
 }
 
-// ─── Main loop ────────────────────────────────────────────────────────────────
 function frame() {
   requestAnimationFrame(frame);
   ctx.fillStyle = `rgba(3, 0, 10, ${TRAIL})`;
@@ -373,121 +332,42 @@ function frame() {
   drawChargePreview();
 }
 
-// ─── Input ────────────────────────────────────────────────────────────────────
+// Input and UI helpers (keep same)
 const ring  = document.getElementById('charge-ring');
 const line  = document.getElementById('velocity-line');
 const hint  = document.getElementById('hint');
 const clearBtn = document.getElementById('clear-btn');
-
 let charging    = false;
 let chargeStart = 0;
 let startWX = 0, startWY = 0;
 let startSX = 0, startSY = 0;
 let currentSX = 0, currentSY = 0;
-
 let tutorialStep = 0;
-const steps = [
-  "Tap & hold to create a star",
-  "Now drag away to set velocity",
-  "Release to launch!",
-  "Tap 'Reset' to clear the board"
-];
+const steps = ["Tap & hold to create a star", "Now drag away to set velocity", "Release to launch!", "Tap 'Reset' to clear the board"];
 
 function updateTutorial() {
-  if (tutorialStep < steps.length) {
-    hint.textContent = steps[tutorialStep];
-    hint.style.opacity = '1';
-    hint.classList.add('pulse');
-    if (tutorialStep === 3) clearBtn.classList.add('pulse');
-    else clearBtn.classList.remove('pulse');
-  } else {
-    hint.style.opacity = '0';
-    clearBtn.classList.remove('pulse');
-  }
+  if (tutorialStep < steps.length) { hint.textContent = steps[tutorialStep]; hint.style.opacity = '1'; hint.classList.add('pulse'); if (tutorialStep === 3) clearBtn.classList.add('pulse'); else clearBtn.classList.remove('pulse'); } else { hint.style.opacity = '0'; clearBtn.classList.remove('pulse'); }
 }
 updateTutorial();
-
 function startCharge(sx, sy) {
-  charging    = true;
-  chargeStart = performance.now();
-  const w = fromScreen(sx, sy);
-  startWX = w.x; startWY = w.y;
-  startSX = sx;  startSY = sy;
-  currentSX = sx; currentSY = sy;
-  
-  ring.style.display = 'block';
-  ring.style.left = sx + 'px';
-  ring.style.top  = sy + 'px';
-  line.style.display = 'block';
-  line.style.left = sx + 'px';
-  line.style.top  = sy + 'px';
-  if (tutorialStep === 0) { tutorialStep = 1; updateTutorial(); }
+  charging = true; chargeStart = performance.now(); const w = fromScreen(sx, sy); startWX = w.x; startWY = w.y; startSX = sx; startSY = sy; currentSX = sx; currentSY = sy; ring.style.display = 'block'; ring.style.left = sx + 'px'; ring.style.top = sy + 'px'; line.style.display = 'block'; line.style.left = sx + 'px'; line.style.top = sy + 'px'; if (tutorialStep === 0) { tutorialStep = 1; updateTutorial(); }
 }
-
 function moveCharge(sx, sy) {
-  if (!charging) return;
-  currentSX = sx; currentSY = sy;
-  if (tutorialStep === 1 && (Math.abs(sx - startSX) > 20 || Math.abs(sy - startSY) > 20)) {
-    tutorialStep = 2; updateTutorial();
-  }
+  if (!charging) return; currentSX = sx; currentSY = sy; if (tutorialStep === 1 && (Math.abs(sx - startSX) > 20 || Math.abs(sy - startSY) > 20)) { tutorialStep = 2; updateTutorial(); }
 }
-
 function releaseCharge() {
-  if (!charging) return;
-  charging = false;
-  ring.style.display = 'none';
-  line.style.display = 'none';
-
-  const held = Math.min(performance.now() - chargeStart, MAX_CHARGE);
-  const mass = MASS_MIN + (held / MAX_CHARGE) * (MASS_MAX - MASS_MIN);
-
-  const dx = (currentSX - startSX);
-  const dy = (currentSY - startSY);
-  const spawnProj = toScreen(startWX, startWY);
-  const vScale = 0.008 / spawnProj.s; 
-  
-  bodies.push(new Body(startWX, startWY, mass, dx * vScale, dy * vScale / Y_SQUISH));
-  if (tutorialStep === 2) { tutorialStep = 3; updateTutorial(); }
+  if (!charging) return; charging = false; ring.style.display = 'none'; line.style.display = 'none'; const held = Math.min(performance.now() - chargeStart, MAX_CHARGE); const mass = MASS_MIN + (held / MAX_CHARGE) * (MASS_MAX - MASS_MIN); const dx = (currentSX - startSX); const dy = (currentSY - startSY); const spawnProj = toScreen(startWX, startWY); const vScale = 0.008 / spawnProj.s; bodies.push(new Body(startWX, startWY, mass, dx * vScale, dy * vScale / Y_SQUISH)); if (tutorialStep === 2) { tutorialStep = 3; updateTutorial(); }
 }
-
 window.resetSim = () => {
-  bodies = [];
-  const R = Math.min(W, H) * 0.36;
-  bodies.push(new Body(0, 0, 700, 0, 0));
-  bodies.push(spawnOrbiter(0, 0, 700, R * 0.44, 25,  1));
-  bodies.push(spawnOrbiter(0, 0, 700, R * 0.66, 50, -1));
-  bodies.push(spawnOrbiter(0, 0, 700, R * 0.90, 18,  1));
-  if (tutorialStep === 3) { tutorialStep = 4; updateTutorial(); }
+  bodies = []; const R = Math.min(W, H) * 0.36; bodies.push(new Body(0, 0, 700, 0, 0)); bodies.push(spawnOrbiter(0, 0, 700, R * 0.44, 25, 1)); bodies.push(spawnOrbiter(0, 0, 700, R * 0.66, 50, -1)); bodies.push(spawnOrbiter(0, 0, 700, R * 0.90, 18, 1)); if (tutorialStep === 3) { tutorialStep = 4; updateTutorial(); }
 };
-
 function drawChargePreview() {
-  if (!charging) return;
-  const held   = Math.min(performance.now() - chargeStart, MAX_CHARGE);
-  const frac   = held / MAX_CHARGE;
-  const mass   = MASS_MIN + frac * (MASS_MAX - MASS_MIN);
-  const radius = massToRadius(mass);
-  const [r, g, b] = massToColor(mass);
-
-  const sz = radius * 2 + 12;
-  ring.style.width       = sz + 'px';
-  ring.style.height      = sz + 'px';
-  ring.style.borderColor = `rgba(${r},${g},${b},0.7)`;
-  ring.style.boxShadow   = `0 0 ${8 + frac * 20}px rgba(${r},${g},${b},0.4)`;
-  
-  const dx = currentSX - startSX;
-  const dy = currentSY - startSY;
-  const dist = Math.sqrt(dx*dx + dy*dy);
-  const angle = Math.atan2(dy, dx);
-  line.style.width = dist + 'px';
-  line.style.transform = `rotate(${angle}rad)`;
-  line.style.background = `rgba(${r},${g},${b},0.6)`;
+  if (!charging) return; const held = Math.min(performance.now() - chargeStart, MAX_CHARGE); const frac = held / MAX_CHARGE; const mass = MASS_MIN + frac * (MASS_MAX - MASS_MIN); const radius = massToRadius(mass); const [r, g, b] = massToColor(mass); const sz = radius * 2 + 12; ring.style.width = sz + 'px'; ring.style.height = sz + 'px'; ring.style.borderColor = `rgba(${r},${g},${b},0.7)`; ring.style.boxShadow = `0 0 ${8 + frac * 20}px rgba(${r},${g},${b},0.4)`; const dx = currentSX - startSX; const dy = currentSY - startSY; const dist = Math.sqrt(dx*dx + dy*dy); const angle = Math.atan2(dy, dx); line.style.width = dist + 'px'; line.style.transform = `rotate(${angle}rad)`; line.style.background = `rgba(${r},${g},${b},0.6)`;
 }
-
 window.addEventListener('pointerdown', e => { if (e.target === canvas) { e.preventDefault(); _pointerDown = true; startCharge(e.clientX, e.clientY); } }, { passive: false });
 window.addEventListener('pointermove', e => { if (_pointerDown) moveCharge(e.clientX, e.clientY); });
 window.addEventListener('pointerup', e => { if (_pointerDown) { _pointerDown = false; releaseCharge(); } });
 window.addEventListener('pointercancel', e => { if (_pointerDown) { _pointerDown = false; releaseCharge(); } });
-
 let _pointerDown = false;
 frame();
 </script>
